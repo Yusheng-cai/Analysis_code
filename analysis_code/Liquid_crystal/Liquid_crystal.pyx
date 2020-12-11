@@ -1,8 +1,8 @@
 import numpy as np
 cimport numpy as np
 import MDAnalysis as mda
-from analysis_code.mdanalysis.md import simulation
-from analysis_code.mdanalysis.md import Timeseries
+from analysis_code.md import *
+from analysis_code.timeseries import *
 from MDAnalysis.analysis.base import AnalysisFromFunction
 
 class LC(simulation):

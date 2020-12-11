@@ -1,5 +1,5 @@
 import numpy as np 
-from analysis_code.mdanalysis.timeseries import Timeseries 
+from analysis_code.timeseries import Timeseries 
 cimport numpy as np 
 import MDAnalysis as mda 
 import os 
