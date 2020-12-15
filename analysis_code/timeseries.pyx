@@ -81,9 +81,6 @@ class Timeseries:
 
         return (lags,AC)
 
-
-
-
     def AC_tau(self):
         """
         Function that calculates autocorrelation time of a time series according to the definition provided by 
