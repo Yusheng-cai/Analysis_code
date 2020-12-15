@@ -21,6 +21,13 @@ class Timeseries:
 
         return (block.mean(),block.std()) 
 
+    def normalize(self):
+        time = self.time 
+        data = self.data
+        data = (data - self.mean())/self.std()
+
+        return Timeseries(data,time)
+
     def mean(self):
         return self.data.mean()
     
@@ -37,24 +44,45 @@ class Timeseries:
         
         return Timeseries(smoothed_points,self.time[window-1:])
 
-    def autocorrelation(self,lags):
+    def autocorrelation(self,delta_t=1):
         """
-        function that calculates the autocorrelation of a timeseries
-        lags: the range of lags to perform (default to be len(self.data)-1) 
+        Using fourier transform to perform autocorrelation, this is a much much much faster way to compute
+        autocorrelation function
+
+        theory:
+            Refer to Milner notes pg95-96
+            Consider a autocorrelation function:
+                    Cj = 1/n*\sum_{i=0}^{n-1}A_{i}A_{i+j}
+            If we perform Fourier Transform on this, the right hand side can be thought of as an autocorrelation, so
+            using the convolution theorem where FT[f convolve g]=FT[f]*FT[g]
+
+            Since f and g are the same function, we get Ctildek = Ak^{2} where Ak is the Fourier transform of the data set 
+            Ai and Ctildek is the fourier transform of the autocorrelation function
+
+            then Cj is calculated by IFFT[Ctildek]
+
+        returns:
+            a tuple of (lag_time, The autocorrelation of shape (N,))
         """
-        cdef float mean = self.mean()
-        cdef float denom = ((self.data-mean)**2).sum()
-        cdef np.ndarray ac = np.zeros((lags,)) 
-        cdef float numer
-        cdef np.ndarray lag = np.arange(lags)
+        # First normalize the data (Timeseries object)
+        normalized = self.normalize()
+        N = len(normalized)
+        lags = np.arange(0,N*delta_t,delta_t)
 
-        for l in range(lags):
-            numer = 0.0 
-            for i in range(len(self.data)-l):
-                numer += (self.data[i]-mean)*(self.data[i+l]-mean)
+        # First perform fourier transform on the data set
+        ft = np.fft.fft(normalized)
+        # Square the fourier transform output
+        sq_ft = (ft.real)**2+(ft.imag)**2
+        # Now perform inver fourier transform on the sq_ft
+        AC = np.fft.ifft(sq_ft)
 
-            ac[l] = numer/denom 
-        return [ac,lag]
+        # take only the real part of AC and divide it by N
+        AC = AC.real/N
+
+        return (lags,AC)
+
+
+
 
     def AC_tau(self):
         """

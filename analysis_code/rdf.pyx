@@ -38,11 +38,11 @@ cpdef np.ndarray COM_rdf(np.ndarray c1,np.ndarray c2,float Lx,float Ly, float Lz
                 dy = min(dy,Ly-dy)
                 dz = min(dz,Lz-dz)
 
-                distance = np.sqrt(dx**2+dy**2+dz**2)
-                if distance > upper_limit:
+                distance = dx**2+dy**2+dz**2
+                if distance > upper_limit**2:
                     distance = 0
 
-                pair_distances[ix] = distance
+                pair_distances[ix] = np.sqrt(distance)
                 ix += 1
 
     # sort the pair distances since np.digitze needs it to be sorted 
