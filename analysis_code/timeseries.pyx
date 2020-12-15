@@ -90,7 +90,7 @@ class Timeseries:
         returns:
                 autocorrelation time (float)
         """
-        ac,_ = self.autocorrelation(self.n-1)
+        _,ac = self.autocorrelation()
         sum_ = 0
         for num in range(len(ac)):
             sum_ += (1-num/self.n)*ac[num]
