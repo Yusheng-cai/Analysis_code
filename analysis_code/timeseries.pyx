@@ -65,9 +65,12 @@ class Timeseries:
             a tuple of (lag_time, The autocorrelation of shape (N,))
         """
         # First normalize the data (Timeseries object)
-        normalized = self.normalize()
+        normalized = self.normalize().data
         N = len(normalized)
         lags = np.arange(0,N*delta_t,delta_t)
+        
+        # First zero pad the data
+        normalized = np.r_[normalized[N//2:],np.zeros_like(normalized),normalized[:N//2]]
 
         # First perform fourier transform on the data set
         ft = np.fft.fft(normalized)
@@ -79,7 +82,7 @@ class Timeseries:
         # take only the real part of AC and divide it by N
         AC = AC.real/N
 
-        return (lags,AC)
+        return (lags,AC[:N])
 
     def AC_tau(self):
         """
