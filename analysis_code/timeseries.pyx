@@ -146,6 +146,3 @@ class Timeseries:
             return Timeseries(data,time)
         else: 
             return self.data[ix]
-
-
-

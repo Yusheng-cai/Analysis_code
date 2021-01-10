@@ -947,11 +947,3 @@ def water_LC_dist(LC,start_time,end_time,Lx,Ly,skip=1,direction='z',segment='who
             print("time step {} is done".format(tix))
 
     return LC_vec/len(calc_time),sol_vec/len(calc_time)
-
-
-
-
-
-
-
-
