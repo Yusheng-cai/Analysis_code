@@ -774,7 +774,65 @@ def smectic_OP(LC,start_t,end_t,d,segment='CN',director=None,verbose=False):
 
     return tau
 
-def density_z(LC,start_time,end_time,direction='z',segment='whole',skip=1,bins_z=100,verbose=False,Broken_interface=None):
+def density_z_atoms(LC,start_time,end_time,direction='z',skip=1,bins_z=100,verbose=False,Broken_interface=None):
+    """
+    calculates density of LC as a function of z
+
+    LC: Liquid crystal object 
+    start_time: the starting time of the calculation
+    end_time: the ending time of the calculation
+    direction: the direction where we can perform calculations along
+    skip: the number of time frames to skip 
+    
+    returns: 
+        density as a function of z (bins_z-1,)
+    """
+    t_idx = np.linspace(0,LC.time,len(LC))
+    start_idx = np.searchsorted(t_idx,start_time,side='left')
+    end_idx = np.searchsorted(t_idx,end_time,side='right')
+    time_idx = np.arange(start_idx,end_idx,skip)
+    density_z = np.zeros((bins_z-1,)) 
+
+    if direction == 'x':
+        d = 0
+    
+    if direction == 'y':
+        d = 1
+
+    if direction == 'z':
+        d = 2
+
+    u = LC["universe"]
+    if Broken_interface is not None:
+        Lx,Ly,Lz, draw_line = Broken_interface
+
+
+    for ts in time_idx:
+        # set the time frame to be ts
+        u.trajectory[ts]
+        pos = u.select_atoms("resname {}CB".format(LC.n)).atoms.positions
+
+        # take only the dth dimension number of all COM 
+        pos = pos[:,d] #(n_atoms,)
+    
+        if Broken_interface is not None:
+            bot_idx = np.argwhere(pos <= draw_line)
+            pos[bot_idx] += Lz
+
+        pos_vec = np.linspace(pos.min(),pos.max(),bins_z)
+ 
+        for j in range(bins_z-1):
+            less = pos_vec[j]
+            more = pos_vec[j+1]
+
+            index = np.argwhere(((pos >= less) & (pos < more)))
+            index = index.flatten()
+            density_z[j] += len(index)/(Lx*Ly*(more-less))
+        if verbose:
+            print("time step {} is done".format(ts))        
+    return density_z/len(time_idx)
+
+def density_z_COM(LC,start_time,end_time,direction='z',segment='whole',skip=1,bins_z=100,verbose=False,Broken_interface=None):
     """
     calculates density of LC as a function of z
 
@@ -886,7 +944,7 @@ def fix_interface(vec,Broken_interface=None,verbose=False,bins=100):
             new_vec = np.concatenate((top_vec,bot_vec))
         else:
             N_top = 0
-            new_vec = np.linspace(vec_min,vec_max,bins)
+            new_vec = np.linspace(vec_min,vec_max+1,bins)
 
     return new_vec,N_top
 
