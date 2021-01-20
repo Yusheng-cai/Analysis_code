@@ -85,11 +85,15 @@ class Timeseries:
 
         return (lags,AC[:N])
 
-    def AC_tau(self,cutoff=None):
+    def AC_tau(self,cutoff=False):
         """
-        Function that calculates autocorrelation time of a time series according to the definition provided by 
-        (Box and Jenkins 1976), where
-                    \tau = 1/2 + \sum_{k=1}^{N}A(k)
+        Function that calculates autocorrelation time of a time series according to the definition provided by
+
+        1. Chodera, J. D., Swope, W. C., Pitera, J. W., Seok, C. & Dill, K. A. Use of the weighted histogram analysis method for the analysis of simulated and parallel tempering simulations. J. Chem. Theory Comput. 3, 26–41 (2007).
+        where:
+            \tau = sum_{t=1}^{N-1}(1-t/N)Ct
+
+        cutoff: if True, then the sum will be cut off when AC crosses 0
 
         returns:
                 autocorrelation time (float)
@@ -97,7 +101,7 @@ class Timeseries:
         _,ac = self.autocorrelation()
         coeff_ = 1-np.arange(1,self.n+1)/self.n
         
-        if cutoff is None:
+        if cutoff is False:
             sum_ = (coeff_*ac).sum()
         else:
             sum_ = 0
