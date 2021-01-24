@@ -3,17 +3,21 @@ cimport numpy as np
 
 
 class Timeseries:
-    def __init__(self,data,time):
-        """
+    """
+    Timeseries class
+
+    Args:
+    ----
         data: the Time series data that user inputs (shape: (N,...)) where N is the number of time steps
         time: total time length (numpy array)
-        """
-        self.n = len(data)
+    """ 
+    def __init__(self,data,time):
+                self.n = len(data)
         self.time = time
         self.data = data
 
     def blockstats(self,size_block,num_draws):
-        cdef np.ndarray block = np.zeros((num_draws,))
+        block = np.zeros((num_draws,))
         
         for i in range(num_draws):
             b = np.random.choice(self.data,size_block)
@@ -22,6 +26,13 @@ class Timeseries:
         return (block.mean(),block.std()) 
 
     def normalize(self):
+        """
+        Function that normalizes the data set
+
+        Return:
+        ------
+            Normalized timeseries data 
+        """
         time = self.time 
         data = self.data
         data = (data - self.mean())/self.std()
@@ -29,17 +40,33 @@ class Timeseries:
         return Timeseries(data,time)
 
     def mean(self):
+        """
+        Function that calculates the mean of the dataset
+
+        Return:
+        ------
+            Mean of the dataset 
+        """
+
         return self.data.mean()
     
     def std(self):
+        """
+        Function that calculates the standard deviation
+
+        Return:
+        ------
+            Std of the dataset
+        """
+
         return self.data.std()
 
     def moving_average(self,window):
         """
         ignore the first (window) points and calculate the moving average
         """
-        filter = np.ones((window,))*(1/window) 
-        smoothed_points = np.convolve(self.data,filter,'valid')
+        filter_ = np.ones((window,))*(1/window) 
+        smoothed_points = np.convolve(self.data,filter_,'valid')
         
         return Timeseries(smoothed_points,self.time[window-1:])
 
@@ -68,7 +95,7 @@ class Timeseries:
         N = len(normalized)
         lags = np.arange(0,N*delta_t,delta_t)
         
-        # zero pad the data
+        # zero pad the middle of the data
         normalized = np.r_[normalized[N//2:],np.zeros_like(normalized),normalized[:N//2]]
 
         # First perform fourier transform on the data set
@@ -77,7 +104,7 @@ class Timeseries:
         # Square the fourier transform output
         sq_ft = (ft.real)**2+(ft.imag)**2
 
-        # Now perform inver fourier transform on the sq_ft
+        # Now perform invert fourier transform on the sq_ft
         AC = np.fft.ifft(sq_ft)
 
         # take only the real part of AC and divide it by N
@@ -89,14 +116,14 @@ class Timeseries:
         """
         Function that calculates autocorrelation time of a time series according to the definition provided by
 
-        1. Chodera, J. D., Swope, W. C., Pitera, J. W., Seok, C. & Dill, K. A. Use of the weighted histogram analysis method for the analysis of simulated and parallel tempering simulations. J. Chem. Theory Comput. 3, 26–41 (2007).
+        Chodera, J. D., Swope, W. C., Pitera, J. W., Seok, C. & Dill, K. A. Use of the weighted histogram analysis method for the analysis of simulated and parallel tempering simulations. J. Chem. Theory Comput. 3, 26–41 (2007).
         where:
             \tau = sum_{t=1}^{N-1}(1-t/N)Ct
 
         cutoff: if True, then the sum will be cut off when AC crosses 0
 
         returns:
-                autocorrelation time (float)
+            autocorrelation time (float)
         """
         _,ac = self.autocorrelation()
         coeff_ = 1-np.arange(1,self.n+1)/self.n
