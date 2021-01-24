@@ -3,7 +3,6 @@ cimport numpy as np
 import MDAnalysis as mda
 from analysis_code.md import *
 from analysis_code.timeseries import *
-from MDAnalysis.analysis.base import AnalysisFromFunction
 
 class LC(simulation):
     def __init__(self,path,time,n,bulk=True,prop=None,p2=False,verbose=False,load_new=False):
@@ -37,6 +36,7 @@ class LC(simulation):
 
         if self.prop != None:
             super().__init__(path,time,prop)
+            # Convert nm to A
             if "volume" in prop:
                 self.properties["volume"].data = self.properties["volume"]*(10**3) #convert to A^3
             if "Lx" in prop:
@@ -88,41 +88,58 @@ class LC(simulation):
                 t = np.linspace(0,time,len(data))
                 self.properties["p2"] = Timeseries(data,t)
 
+    def CN_vec(self,ts):
+        """
+        Function that calculates the CN vector at time ts
+
+        Args:
+        ----
+        ts: the time step of the trajectory
+
+        Return:
+        ------
+        numpy array of CN vectors (N,3)
+        """
+        u = self.properties["universe"]
+        u.trajectory[ts]
+
+        if self.bulk:
+            residues = u.residues
+        else:
+            residues = u.select_atoms("resname {}CB".format(self.n)).residues
+        
+        CN = np.zeros((len(residues),3))
+        ix = 0
+        for res in residues: 
+            N = res.atoms[0].position
+            C = res.atoms[1].position
+            CN_vec = (N - C)/np.sqrt(((N-C)**2).sum())
+            CN[ix] = CN_vec
+            ix += 1
+
+        return CN
+
     def Qmatrix(self,ts):
         """
         calculates the Q matrix at a particular time step of the trajectory
-        input args:
+
+        Args:
+        ----
             ts: the time step at which the Qmatrix is calculated
-        returns:
+
+        Return:
             Q:
             \sum_{l=1}^{N} (3*u_{l}u_{l}t - I)/2N
             (3,3)
         """ 
-        cdef np.ndarray Q = np.zeros((3,3))
-        cdef np.ndarray N,C,CN_vec
-        cdef np.ndarray I = np.eye(3)
-        cdef np.ndarray CN = self.segments["CN"]
-        cdef np.ndarray CN_direction = np.zeros((self.n_molecules,3))
-        cdef ix = 0
+        CN_vec = self.CN_vec(ts)
+        ix = 0
+        n = self.n_molecules
+        I = np.eye(3)
 
+        Q = 3/(2*n)*np.dot(CN_vec.T,CN_vec) - 1/2*I
 
-        self.properties["universe"].trajectory[ts]
-
-        if self.bulk == False:
-            residues = self.properties["universe"].select_atoms("resname {}CB".format(self.n)).residues
-        else:
-            residues = self.properties['universe'].residues
-
-        for res in residues:
-            N = res.atoms[CN][0].position
-            C = res.atoms[CN][1].position
-
-            CN_vec = (N - C)/np.sqrt(((N-C)**2).sum())
-            CN_direction[ix] = CN_vec
-            Q += (3*np.outer(CN_vec,CN_vec)-I)/(2*self.n_molecules)
-            ix += 1
-
-        return Q,CN_direction
+        return Q
     
     def director(self,Q):
         """
@@ -130,14 +147,14 @@ class LC(simulation):
         the system director corresponds to the eigenvector which corresponds to the largest
         eigenvalue of the Q matrix
 
-        input args:
+        Args:
+        ----
             Q: the Q matrix of LC system (3,3)
 
-        return:
+        Return:
+        ------
             director in shape(3,1)
         """
-        cdef np.ndarray eigv,eigval
-
         eigv,eigvec = np.linalg.eig(Q)
             
         order = np.argsort(-abs(eigv))
@@ -147,47 +164,19 @@ class LC(simulation):
 
         return director,eigv[order2]
 
-    def COM_LC_sol(self,ts,segment='whole',solvent_resname='SOL'):
-        """
-        calculates the center of mass of everything in the system if the system is not a bulk simulation
-
-        input args:
-            ts: the time step at which this center of mass measurement is at 
-            segment: the segment at which the center of mass is measured on
-
-        returns:
-            center of mass matrix of shape (N_molecules+N_solvent,3)
-
-        errors:
-            NotImplementedError is raised if the LC is a bulk simulation
-        """
-        if self.bulk == True:
-            raise NotImplementedError("This is a bulk LC simulation, cannot calculated COM of solvent.")
-        
-        LC_COM = self.COM(ts,segment)
-
-        self.properties['universe'].trajectory[ts]
-        SOL_res = self.properties['universe'].select_atoms('resname {}'.format(solvent_resname)).residues 
-        SOL_COM = np.zeros((len(SOL_res),3))
-        ix = 0
-        for res in SOL_res:
-            SOL_COM[ix] = res.atoms.center_of_mass()
-            ix += 1
-
-        return np.vstack((LC_COM,SOL_COM))
-
-
     def COM(self,ts,segment='whole'):
         """
-        input args:
+        Arg:
+        ---
             ts: the time step at which this center of mass measurement is at 
             segment: the segment at which the center of mass is measured on
 
-        returns:
+        Return:
+        ------
             center of mass matrix of shape (N_molecules,3)
         """
-        cdef np.ndarray idx
         self.properties["universe"].trajectory[ts]
+
         if self.bulk == True:
             residues = self.properties['universe'].residues
         else:
@@ -200,9 +189,8 @@ class LC(simulation):
         else:
             raise NotImplementedError("The segment {} is not currently implemented".format(segment))
 
-        cdef np.ndarray COM = np.zeros((self.n_molecules,3)) 
-        cdef int ix = 0
-        cdef np.ndarray num
+        COM = np.zeros((self.n_molecules,3)) 
+        ix = 0
 
         for res in residues:
             num = res.atoms[idx].center_of_mass()
@@ -213,26 +201,107 @@ class LC(simulation):
              
     def p2(self):
         """
-        Calculating p2 order parameter for nCB molecule
+        Function calculating p2 order parameter for nCB molecule
         Q matrix is calculated as following:
         Q = \sum_{l}^{N}(3u_{l}u_{l}^{T} - I)/2N
         we choose p2 to be -2*lambda_{0} where lambda_{0} is the second largest eigenvalue of Q
         u_{l} is chosen to be the normalized vector between C and N in nCB
+
+        Return:
+        ------
+            P2 vector as a function of time
         """
-        cdef int ix = 0
-        cdef int t = len(self.properties["universe"].trajectory)
-        cdef np.ndarray Q,eigv,eigvec
-        cdef np.ndarray p2_vec = np.zeros((t,))
-        cdef np.ndarray time = np.linspace(0,self.time,t)
+        ix = 0
+        t = len(self.properties["universe"].trajectory)
+        p2_vec = np.zeros((t,))
+        time = np.linspace(0,self.time,t)
 
         for ts in range(t):
-            Q,_ = self.Qmatrix(ts)
+            Q = self.Qmatrix(ts)
             _,eigv = self.director(Q)
+
             p2_vec[ix] = eigv[1]*(-2)
             ix += 1
 
         return p2_vec
 
+    
+    def pcost_z(self,start_time,end_time,director,min_,max_,direction='z',segment='whole',skip=1,bins_z=100,bins_t=100,verbose=False):
+        """
+        Function that calculates a heat map of p(cos(theta) as a function of z. 
+
+        Args:
+        ----
+            start_time: the starting time in ns
+
+            end_time: the ending time in ns
+
+            direction: at which direction is the calculation being performed along ('x','y','z')
+
+            segment: which segment of the LC molecule to calculate COM for 
+
+            skip: number of time frames to skip 
+
+            bins_z: the bins along the direction where the calculation is being performed
+
+            bins_t: the bins of theta for p(cos(theta))
+
+            verbose: whether to be verbose during execution
+
+        Return:
+            2d array contains p(cos(theta)) as a function of z  (bins_z-1,bins_t-1)
+        """
+        u = self.properties['universe']
+        COM_vec = np.linspace(min_,max_,bins_z)
+        theta_binned = np.linspace(-1,1,bins_t)
+
+
+        # find the time frame indexes of the simulation
+        t_idx = np.linspace(0,self.time,len(u.trajectory))
+        start_idx = np.searchsorted(t_idx,start_time,side='left')
+        end_idx = np.searchsorted(t_idx,end_time,side='right')
+        time_idx = np.arange(start_idx,end_idx,skip)
+        pcost_theta_director = np.zeros((bins_z-1,bins_t-1)) # a 2-d array that holds p(cos(theta)) in shape (bins_z-1,bins_t-1)
+
+        if direction == 'x':
+            d = 0
+        
+        if direction == 'y':
+            d = 1
+
+        if direction == 'z':
+            d = 2
+        
+        for ts in time_idx:
+            # first find Center of mass matrix at time step "ts"
+            COM_mat = self.COM(ts,segment) #(n_molecues,3)
+
+            # take only the dth dimension number of all COM 
+            COM_mat = COM_mat[:,d] #(n_molecules,)
+
+            # set the universe trajectory to "ts" time step
+            u.trajectory[ts]
+            
+            # find the CN vectors of all the molecules 
+            CN_vec = self.CN_vec(ts)
+             
+            for i in range(bins_z-1):
+                less = COM_vec[i]
+                more = COM_vec[i+1]
+
+                index = np.argwhere(((COM_mat >= less) & (COM_mat < more)))
+                index = index.flatten()
+                if index.size != 0:
+                    cost = (CN_vec[index]*director).sum(axis=1) 
+
+                    digitized = np.digitize(cost,theta_binned)
+                    pcost = np.array([(digitized == j).sum() for j in range(1,bins_t)])
+                    pcost_theta_director[i] += pcost
+
+            if verbose:
+                print("time step {} is done".format(ts))
+                   
+        return pcost_theta_director/len(time_idx)
 
 cpdef director_z(LC,ts,segment='whole',bins_z=100,direction='z',Broken_interface=None,verbose=False):
     """
@@ -470,103 +539,6 @@ cpdef CN_director_theta(LC,start,end,skip=None,verbose=False,director=None):
     return (costheta,time_idx)
 
 # find probability distribution of cos(theta) as a function of z 
-def p_CN_director_z(LC,start_time,end_time,director,direction='z',segment='whole',skip=1,bins_z=100,bins_t=100,Broken_interface=None,verbose=False):
-    """
-    Function that calculates a heat map of p(cos(theta) as a function of z. 
-
-    LC: Liquid crystal object
-
-    start_time: the starting time in ns
-
-    end_time: the ending time in ns
-
-    direction: at which direction is the calculation being performed along ('x','y','z')
-
-    segment: which segment of the LC molecule to calculate COM for 
-
-    skip: number of time frames to skip 
-
-    bins_z: the bins along the direction where the calculation is being performed
-
-    bins_t: the bins of theta for p(cos(theta))
-
-    Broken_interface:
-    (a) None
-    (b) tuple of (Lz,draw_line)
-
-    verbose: whether to be verbose during execution
-
-    returns:
-        a 2d array contains p(cos(theta)) as a function of z  (bins_z-1,bins_t-1)
-    """
-    # find the time frame indexes of the simulation
-    t_idx = np.linspace(0,LC.time,len(LC))
-    start_idx = np.searchsorted(t_idx,start_time,side='left')
-    end_idx = np.searchsorted(t_idx,end_time,side='right')
-    time_idx = np.arange(start_idx,end_idx,skip)
-    pcost_theta_director = np.zeros((bins_z-1,bins_t-1)) # a 2-d array that holds p(cos(theta)) in shape (bins_z-1,bins_t-1)
-    theta_binned = np.linspace(-1,1,bins_t)
-
-    if direction == 'x':
-        d = 0
-    
-    if direction == 'y':
-        d = 1
-
-    if direction == 'z':
-        d = 2
-
-
-    for ts in time_idx:
-        # first find Center of mass matrix at time step "ts"
-        COM_mat = LC.COM(ts,segment) #(n_molecues,3)
-
-        # take only the dth dimension number of all COM 
-        COM_mat = COM_mat[:,d] #(n_molecules,)
-
-        # set the universe trajectory to "ts" time step
-        LC['universe'].trajectory[ts]
-
-        if LC.bulk == True:
-            residues = LC['universe'].residues
-        else:
-            residues = LC['universe'].select_atoms("resname {}CB".format(LC.n)).residues
-
-        COM_vec,Ntop = fix_interface(COM_mat,Broken_interface=Broken_interface,bins=bins_z,verbose=verbose)
-
-        for i in range(bins_z-1):
-            if Ntop != 0:
-                if i >= Ntop:
-                    j = i + 1
-                else:
-                    j = i
-            else:
-                j = i
-
-            less = COM_vec[j]
-            more = COM_vec[j+1]
-
-            index = np.argwhere(((COM_mat >= less) & (COM_mat < more)))
-            index = index.flatten()
-            if index.size != 0:
-                cost = []
-                for idx in index:
-                    res = residues[idx]
-                    N = res.atoms[0].position
-                    C = res.atoms[1].position
-                    CN_vec = (N - C)/np.sqrt(((N-C)**2).sum())
-                    cost.append(np.dot(CN_vec,director))
-                cost = np.array(cost)
-                digitized = np.digitize(cost,theta_binned)
-                pcost = np.array([(digitized == j).sum() for j in range(1,bins_t)])
-                pcost_theta_director[i] += pcost/pcost.sum()
-
-        if verbose:
-            print("time step {} is done".format(ts))
-
-                         
-    return pcost_theta_director/len(time_idx)
-
 
 # write the data to pdb file in the beta factor
 cpdef pdb_bfactor(LC,pdb_name,data,verbose=False,sel_atoms=None): 
@@ -710,69 +682,6 @@ cpdef pcost_CN(LC,int ts,np.ndarray COM_dist_mat,str segment='benzene1',float di
      
 
     return (bin_vec[:-1],npbin_count) 
-
-# calculates the smectic ordering parameter at a certain time and distance
-def smectic_OP(LC,start_t,end_t,d,segment='CN',director=None,verbose=False):
-    """
-    calculate the smectic ordering parameter at a certain time ts and a spacing d
-
-    LC: an Liquid crystal object 
-    start_t: the time at which the calculation starts at (ns)
-    end_t: the time at which the calculation ends at (ns)
-    d: an array of the spacing d in which to calculate
-
-    returns
-        a number of the smectic order parameter at ts with a distance d
-    """
-    time_idx = np.linspace(0,LC.time,len(LC))
-    start_timeidx = np.searchsorted(time_idx,start_t,side='left') # find the index of the starting time in list of simulation times (in frame)
-    end_timeidx = np.searchsorted(time_idx,end_t,side='right') # find the index of the ending time in list of simulation times (in frame)
-
-    time_calc = np.arange(start_timeidx,end_timeidx) # the time index in which is calculated
-    n = len(time_calc) # length of the time indexes
-    COM_mat = np.zeros((n,LC.n_molecules,3))
-    tau = np.zeros((len(d),))
-   
-    ix = 0
-    for t in time_calc:
-        COM_mat[ix] = LC.COM(t,segment=segment) #(t,n_molecules,3)  
-        ix += 1
-
-    if isinstance(director,np.ndarray):
-        if verbose:
-            print("Using user defined director, ", director)
-        director = director
-    else:
-        if verbose:
-            print("Using Q matrix to calculate director since no user defined director is provided")
-        director_mat = np.zeros((n,3))
-        ix = 0
-        for t in time_calc:
-            Q,_ = LC.Qmatrix(t) 
-            director,_ = LC.director(Q) 
-            director = director.flatten() #(3,)
-            director_mat[ix] = director
-            ix += 1
-
-    ix = 0
-    for dis in d:
-        sum_ = 0
-        for i in range(n):
-            if isinstance(director,np.ndarray):
-                kdotn = (COM_mat[i]*director).sum(axis=1)
-            else:
-                kdotn = (COM_mat[i]*director[i]).sum(axis=1)
-
-            a = np.cos(2*np.pi*kdotn/dis).sum(axis=0)
-            b = np.sin(2*np.pi*kdotn/dis).sum(axis=0)
-
-            sum_ += np.sqrt((a**2)+(b**2))/LC.n_molecules
-        tau[ix] = sum_/n
-        if verbose:
-            print("{} is done".format(dis))
-        ix += 1
-
-    return tau
 
 def density_z_atoms(LC,start_time,end_time,direction='z',skip=1,bins_z=100,verbose=False,Broken_interface=None):
     """
@@ -947,61 +856,3 @@ def fix_interface(vec,Broken_interface=None,verbose=False,bins=100):
             new_vec = np.linspace(vec_min,vec_max+1,bins)
 
     return new_vec,N_top
-
-
-def water_LC_dist(LC,start_time,end_time,Lx,Ly,skip=1,direction='z',segment='whole',bins_z=100,verbose=False,Broken_interface=None):
-    """
-    find distribution of water and LC in an interface simulation
-
-    LC: the liquid crystal object
-    start_time: the starting time at which the calculation is performed (in ns)
-    end_time: the ending time at which the calculation is performed (in ns)
-    Lx: the length of the box in the x direction (in Angstrom)
-    Ly: the length of the box in the y direction (in Angstrom)
-    skip: how many time frames to skip between start_time and end_time
-    direction: 'x','y' or 'z' indicating which way the simulation box is binned
-    segment: the segment of the LC that its COM is calculated based on
-    bins_z: number of bins in the z direction
-    
-    returns: 
-        distribution of water and LC as a function of z
-    """
-    time = LC.time
-    time_idx = np.linspace(0,time,len(LC)) # the time index during the simulation
-    start_idx = np.searchsorted(time_idx,start_time,side='right')
-    end_idx = np.searchsorted(time_idx,end_time,side='left')
-    calc_time = np.arange(start_idx,end_idx,skip)    
-    sol_vec = np.zeros((bins_z-1,))
-    LC_vec = np.zeros((bins_z-1,))
-    n_molecules = LC.n_molecules
-    N = len(LC['universe'].residues)
-    n_sol = N-n_molecules
-
-    if direction == 'x':
-        d = 0
-    if direction == 'y':
-        d = 1
-    if direction == 'z':
-        d = 2
-
-    for tix  in calc_time:
-        LC['universe'].trajectory[tix]
-
-        LC_sol_COM = LC.COM_LC_sol(tix,segment=segment)[:,d]
-
-        min_COM = LC_sol_COM.min()
-        max_COM = LC_sol_COM.max()
-
-        COM_vec = np.linspace(min_COM,max_COM,bins_z)
-        for i in range(bins_z-1):
-            less = COM_vec[i]
-            more = COM_vec[i+1]
-            dz = more - less
-
-            idx_ = np.argwhere(((LC_sol_COM >= less) & (LC_sol_COM < more))) 
-            LC_vec[i] += (idx_ < n_molecules).sum()/(dz*Ly*Lx)
-            sol_vec[i] += (idx_ >= n_molecules).sum()/(dz*Ly*Lx)
-        if verbose:
-            print("time step {} is done".format(tix))
-
-    return LC_vec/len(calc_time),sol_vec/len(calc_time)
