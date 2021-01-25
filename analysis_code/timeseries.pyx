@@ -12,7 +12,7 @@ class Timeseries:
         time: total time length (numpy array)
     """ 
     def __init__(self,data,time):
-                self.n = len(data)
+        self.n = len(data)
         self.time = time
         self.data = data
 

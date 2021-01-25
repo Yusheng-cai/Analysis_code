@@ -1,7 +1,7 @@
 import numpy as np
 
 
-def rdf(pos1,pos2,box,max_,nbins=31):
+def rdf(pos1,pos2,box,max_,nbins=100):
     """
     Function that calculates radial distribution function between a pair of representation of molecules (Center of Mass,Atom)
 
@@ -11,7 +11,7 @@ def rdf(pos1,pos2,box,max_,nbins=31):
     pos2(numpy.ndarray): Position matrix of the second matrix (N2,3)
     box(numpy.ndarray): The sides of the box (in A) (3,)
     max_(float): the maximum number at which the radial distribution should bin to
-    nbins(int): The number of bins that the rdf should bin
+    nbins(int): The number of bins that the rdf should bin (default 100)
     
     Return:
     ------
