@@ -252,8 +252,8 @@ class LC(simulation):
             2d array contains p(cos(theta)) as a function of z  (bins_z-1,bins_t-1)
         """
         u = self.properties['universe']
-        COM_vec = np.linspace(min_,max_,bins_z)
-        theta_binned = np.linspace(-1,1,bins_t)
+        t_binned = np.linspace(-1,1,bins_t)
+        z_binned = np.linspace(min_,max_,bins_z)
 
 
         # find the time frame indexes of the simulation
@@ -261,6 +261,8 @@ class LC(simulation):
         start_idx = np.searchsorted(t_idx,start_time,side='left')
         end_idx = np.searchsorted(t_idx,end_time,side='right')
         time_idx = np.arange(start_idx,end_idx,skip)
+
+
         pcost_theta_director = np.zeros((bins_z-1,bins_t-1)) # a 2-d array that holds p(cos(theta)) in shape (bins_z-1,bins_t-1)
 
         if direction == 'x':
@@ -279,25 +281,13 @@ class LC(simulation):
             # take only the dth dimension number of all COM 
             COM_mat = COM_mat[:,d] #(n_molecules,)
 
-            # set the universe trajectory to "ts" time step
-            u.trajectory[ts]
-            
             # find the CN vectors of all the molecules 
             CN_vec = self.CN_vec(ts)
+            cost = (CN_vec*director).sum(axis=1)
+            
+            prob,_,_ = np.histogram2d(COM_mat,cost,[z_binned,t_binned])
+            pcost_theta_director += prob
              
-            for i in range(bins_z-1):
-                less = COM_vec[i]
-                more = COM_vec[i+1]
-
-                index = np.argwhere(((COM_mat >= less) & (COM_mat < more)))
-                index = index.flatten()
-                if index.size != 0:
-                    cost = (CN_vec[index]*director).sum(axis=1) 
-
-                    digitized = np.digitize(cost,theta_binned)
-                    pcost = np.array([(digitized == j).sum() for j in range(1,bins_t)])
-                    pcost_theta_director[i] += pcost
-
             if verbose:
                 print("time step {} is done".format(ts))
                    
