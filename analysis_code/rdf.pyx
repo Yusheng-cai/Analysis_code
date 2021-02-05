@@ -37,7 +37,7 @@ def rdf(pos1,pos2,box,max_,nbins=100):
     distance = distance[distance!=0]
     
     digitized = np.digitize(distance,bins_)
-    binned_vec = [(digitized == i).sum() for i in range(1,nbins)]
+    binned_vec  = np.array([(digitized == i).sum() for i in range(1,nbins)])
     gr[1:] = binned_vec/(rho*volume_vec*N)
     
     return bins_,gr
