@@ -174,6 +174,7 @@ class GAFF_LC:
         sign = np.sign(sign)
         
         dangle = np.arccos((n123*n234).sum(axis=-1,keepdims=True))*sign
+        dangle += np.pi
 
         return dangle
     
