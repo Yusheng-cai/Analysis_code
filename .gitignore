@@ -6,3 +6,4 @@ dist/
 *.egg-info/
 analysis_code/*.swp
 analysis_code/test/__pycache__/
+analysis_code/__pycache__/
