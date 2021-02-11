@@ -162,19 +162,24 @@ class GAFF_LC:
         
         bond1 = (a1-a2)/np.sqrt(((a1-a2)**2).sum(axis=-1,keepdims=True)) # shape(N,3)
         bond2 = (a3-a2)/np.sqrt(((a3-a2)**2).sum(axis=-1,keepdims=True)) # shape(N,3)
-        angle123 = np.arccos((bond1*bond2).sum(axis=-1,keepdims=True)) # shape (N,1)
-        n123 = np.cross(bond1,bond2,axis=-1)/np.sin(angle123) # shape (N,3)
+        cosangle123 = (bond1*bond2).sum(axis=-1,keepdims=True) # shape (N,1)
+        sinangle123 = np.sqrt(1 - cosangle123**2)
+        n123 = np.cross(bond1,bond2,axis=-1)/sinangle123 # shape (N,3)
         
         bond3 = (a2-a3)/np.sqrt(((a2-a3)**2).sum(axis=-1,keepdims=True)) # shape (N,3)
         bond4 = (a4-a3)/np.sqrt(((a4-a3)**2).sum(axis=-1,keepdims=True)) #shape (N,3)
-        angle234 = np.arccos((bond3*bond4).sum(axis=-1,keepdims=True)) #shape (N,1)
-        n234 = np.cross(bond3,bond4,axis=-1)/np.sin(angle234) #shape (N,3)
+        cosangle234 = (bond3*bond4).sum(axis=-1,keepdims=True) #shape (N,1)
+        sinangle234 = np.sqrt(1 - cosangle234**2)
+        n234 = np.cross(bond3,bond4,axis=-1)/sinangle234 #shape (N,3)
 
         sign = (n123*bond4).sum(axis=-1,keepdims=True) #shape (N,1)
         sign = np.sign(sign)
-        
-        dangle = np.arccos((n123*n234).sum(axis=-1,keepdims=True))*sign
-        dangle += np.pi
+
+        l = (n123*n234).sum(axis=-1,keepdims=True) 
+        dangle = np.arccos(l)*sign
+        if np.isnan(dangle).any():
+            print(l[np.isnan(dangle)])
+        dangle[dangle < 0] += 2*np.pi 
 
         return dangle
     
