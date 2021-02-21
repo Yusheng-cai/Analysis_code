@@ -34,7 +34,29 @@ class GAFF_LC:
             elif atom.name == self.atom2:
                 self.aidx2 = i
 
-    
+    def COM(self,ts):
+        """
+        Function that calculates the center of mass of the Liquid crystal molecule at time ts
+
+        Args:
+        -----
+            ts(int): The time frame at which the calculation is performed on 
+
+        Return:
+            COM_mat(numpy.ndarray): The center of mass matrix of shape (N,3)
+        """
+        u = self.u
+        u.trajectory[ts]
+        N = len(u.residues)
+        COM_mat = np.zeros((N,3))
+
+        for i in range(N):
+            res = u.select_atoms("resnum {}".format(i))
+            COM_mat[i] = res.center_of_mass()
+
+        return COM_mat
+
+ 
     def director_mat(self,ts):
         """
         Function that finds the director vector of all the residues in the system and put it in a matrix of shape (N,3)
