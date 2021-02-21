@@ -34,6 +34,44 @@ class GAFF_LC:
             elif atom.name == self.atom2:
                 self.aidx2 = i
 
+    def pos(self,ts):
+        """
+        Function that returns the position of each of the atoms in the system at time ts
+
+        Args:
+        ----
+            ts(int): The time frame at which the calculation is performed upon
+
+        Return:
+        ------
+            pos(numpy.ndarray): The position matrix at time ts of shape (N,3)
+        """
+        u = self.u
+        u.trajectory[ts]
+
+        return u.atoms.positions
+
+    def respos_noCOM(self,resnum,ts):
+        """
+        Function that returns the position of each of the atoms in a residue without their center of mass
+
+        Args:
+        ----
+            resnum(int): The index of the residue
+            ts(int): The time frame 
+
+        Return:
+        -----
+            pos(numpy.ndarray): The position of each of the atoms in residue (resnum) in the system without its COM
+        """
+        u = self.u
+        u.trajectory[ts]
+        COM = self.COM(ts)
+
+        pos = u.select_atoms("resnum {}".format(resnum)).positions
+
+        return pos - COM[resnum]
+
     def COM(self,ts):
         """
         Function that calculates the center of mass of the Liquid crystal molecule at time ts
@@ -87,7 +125,29 @@ class GAFF_LC:
 
         return director_mat
 
-    def Qmatrix(self,ts):
+    def director_mat_MOI(self,ts):
+        """
+        Function that finds the director matrix using Moment of inertia tensor (the eigenvector that corresponds to the lowest eigenvalue of MOI tensor)
+
+        Args:
+        ----
+            ts(int): The time frame 
+
+        Return:
+        ------
+            director_mat(numpy.ndarray): The director matrix obtained using MOI tensor
+        """
+        u = self.u
+        u.trajectory[ts]
+        N = len(u.residues)
+        director_mat = np.zeros((N,3))
+
+        for i in range(N):
+            director_mat[i] = u.select_atoms("resnum {}".format(i)).principal_axes()[-1]
+
+        return director_mat
+
+    def Qmatrix(self,ts,MOI=False):
         """
         Function that calculates the Qmatrix of the system at time ts.
 
@@ -101,7 +161,10 @@ class GAFF_LC:
         2.eigvec(numpy.ndarray)=The director of the system at time ts
         3.p2(numpy.ndarray)=The p2 value of the system at time ts
         """
-        d_mat = self.director_mat(ts)
+        if MOI:
+            d_mat = self.director_mat_MOI(ts)
+        else:
+            d_mat = self.director_mat(ts)
         u = self.u
         N = len(u.residues)
         I = np.eye(3)
