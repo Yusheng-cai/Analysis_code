@@ -4,34 +4,32 @@ import MDAnalysis as mda
 from analysis_code.md import *
 from analysis_code.timeseries import *
 
-class LC(simulation):
-    def __init__(self,path,time,n,bulk=True,prop=None,p2=False,verbose=False,load_new=False):
-        """
-        path: path to the MD_folder, in liquid crystals, it has to have the following files
+class nCB(simulation):
+    """
+    Args:
+    ----
+        path(string): path to the MD_folder, in liquid crystals, it has to have the following files
         1. {md_name}.tpr
         2. {md_name}_pbc.xtc
         3. {md_name}_properties.xtc
         The folder that contains these files should be name {md_name}
 
-        time: the total simulation time (ns)
+        time(int): the total simulation time (ns)
 
-        n: the n in nCB
+        n(int): the n in nCB
 
-        bulk: a boolean that tells whether or not the simulation is bulk nCB or mixture
+        bulk(bool): a boolean that tells whether or not the simulation is bulk nCB or mixture
 
-        prop: a list that tells the LC object to load certain files, they need to have the name of 
+        prop(list): a list that tells the LC object to load certain files, they need to have the name of 
               {md_name}_property.xvg
 
-        p2: a boolean that tells whether or not p2 vector needs to be computed and saved in the folder
+        p2(bool): a boolean that tells whether or not p2 vector needs to be computed and saved in the folder
 
-        verbose: whether or not the program shall print results
-
-        load_new: this is only applied when bulk=False, setting this to True will store a new universe 
-                for the LC called 'LC universe'
-        """
+        verbose(bool): whether or not the program shall print results
+    """
+    def __init__(self,path,time,n,bulk=True,prop=None,p2=False,verbose=False):
         self.n = n
         self.bulk = bulk
-        self.load_new = load_new
         self.prop = prop
 
         if self.prop != None:
@@ -50,10 +48,6 @@ class LC(simulation):
              
         if self.bulk == False:
             LC_atoms = self.properties["universe"].select_atoms("resname {}CB".format(n))
-            if self.load_new == True:
-                coordinates_LC = AnalysisFromFunction(lambda x:x.positions.copy(),LC_atoms).run().results
-                LC_u = mda.Merge(LC_atoms).load_new(coordinates_LC)
-                self.properties["LC universe"] = LC_u
             self.n_atoms = len(LC_atoms.residues[0].atoms)
             self.n_molecules = len(LC_atoms.residues)            
         else:
@@ -119,7 +113,29 @@ class LC(simulation):
 
         return CN
 
-    def Qmatrix(self,ts):
+    def director_MOI(self,ts):
+        """
+        Function that finds the director of each of the molecule using moment of inertia tensor
+
+        Args:
+        ----
+            ts(int): The time frame
+
+        Return:
+        ------
+            director_mat(numpy.ndarray): A matrix of director of shape (N,3)
+        """
+        u = self.properties["universe"]
+        u.trajectory[ts]
+        N = len(u.residues)
+        director_mat = np.zeros((N,3))
+
+        for i in range(N):
+            director_mat[i] = u.select_atoms("resnum {}".format(i)).principal_axes()[-1]
+
+        return director_mat
+
+    def Qmatrix(self,ts,MOI=False):
         """
         calculates the Q matrix at a particular time step of the trajectory
 
@@ -132,14 +148,18 @@ class LC(simulation):
             \sum_{l=1}^{N} (3*u_{l}u_{l}t - I)/2N
             (3,3)
         """ 
-        CN_vec = self.CN_vec(ts)
+        if MOI:
+            CN_vec = self.director_MOI(ts)
+        else:
+            CN_vec = self.CN_vec(ts)
+
         ix = 0
         n = self.n_molecules
         I = np.eye(3)
 
         Q = 3/(2*n)*np.dot(CN_vec.T,CN_vec) - 1/2*I
 
-        return Q
+        return Q,CN_vec
     
     def director(self,Q):
         """
@@ -166,7 +186,7 @@ class LC(simulation):
 
     def COM(self,ts,segment='whole'):
         """
-        Arg:
+        Args:
         ---
             ts: the time step at which this center of mass measurement is at 
             segment: the segment at which the center of mass is measured on
@@ -296,8 +316,9 @@ class LC(simulation):
 cpdef director_z(LC,ts,segment='whole',bins_z=100,direction='z',Broken_interface=None,verbose=False):
     """
     finds director as a function of z along the direction provided
-    
-    input args:
+   
+    Args:
+    -----
         LC: Liquid crystal object
         ts: the time step at which the calculation is performed 
         segment: The segment at where we want to take COM at 
