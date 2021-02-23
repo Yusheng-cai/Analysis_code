@@ -149,17 +149,17 @@ class nCB(simulation):
             (3,3)
         """ 
         if MOI:
-            CN_vec = self.director_MOI(ts)
+            director_vec = self.director_MOI(ts)
         else:
-            CN_vec = self.CN_vec(ts)
+            director_vec = self.CN_vec(ts)
 
         ix = 0
         n = self.n_molecules
         I = np.eye(3)
 
-        Q = 3/(2*n)*np.dot(CN_vec.T,CN_vec) - 1/2*I
+        Q = 3/(2*n)*np.dot(director_vec.T,director_vec) - 1/2*I
 
-        return Q,CN_vec
+        return Q,director_vec
     
     def director(self,Q):
         """
@@ -252,21 +252,27 @@ class nCB(simulation):
 
         Args:
         ----
-            start_time: the starting time in ns
+            start_time(float): the starting time in ns
 
-            end_time: the ending time in ns
+            end_time(float): the ending time in ns
 
-            direction: at which direction is the calculation being performed along ('x','y','z')
+            director(numpy.ndarray): Array of the director of the system 
+            
+            min_(float): Minimum number of the z bin
 
-            segment: which segment of the LC molecule to calculate COM for 
+            max_(float): Maximum number of the z bin 
 
-            skip: number of time frames to skip 
+            direction(str): at which direction is the calculation being performed along ('x','y','z')
 
-            bins_z: the bins along the direction where the calculation is being performed
+            segment(str): which segment of the LC molecule to calculate COM for 
 
-            bins_t: the bins of theta for p(cos(theta))
+            skip(int): number of time frames to skip 
 
-            verbose: whether to be verbose during execution
+            bins_z(int): the bins along the direction where the calculation is being performed
+
+            bins_t(int): the bins of theta for p(cos(theta))
+
+            verbose(bool): whether to be verbose during execution
 
         Return:
             2d array contains p(cos(theta)) as a function of z  (bins_z-1,bins_t-1)
@@ -312,6 +318,48 @@ class nCB(simulation):
                 print("time step {} is done".format(ts))
                    
         return pcost_theta_director/len(time_idx)
+
+    def cos_t(self,start,end,director=np.array([[0],[0],[1]]),skip=1,verbose=False):
+        """
+        Function that calculates the cos(theta) between the CN vector of each LC molecule
+        and the director of the system which is passed in by the user.
+
+        Args:
+        ----
+            start(float): The time to start calculation (in ns)
+            end(float): The time to end calculation (in ns)
+            director(numpy.ndarray): The director of the system (default value [0,0,1])
+            skip(int): The number of time frames to skip (default value 1) 
+            verbose(bool): whether or not to print messages
+
+        Return:
+        ------
+            cos(theta) in shape (n,n_molecules*n_atoms)
+        """
+        t = self.__len__()
+        time = np.linspace(0,self.time,t)
+
+        # Find the starting the ending index of the user specified times
+        start_timeidx = np.searchsorted(time,start,side='left')
+        end_timeidx = np.searchsorted(time,end,side='right')
+        time_idx = np.arange(start_timeidx,end_timeidx,skip)
+
+        n = len(time_idx)
+        costheta=np.zeros((n,self.n_molecules*self.n_atoms))
+        ix = 0
+
+        for ts in time_idx:  
+            _,CN_direction = self.Qmatrix(ts) # CN_direction (N,3) 
+            b = np.dot(CN_direction,director) #of shpae (N,1)
+            b = np.repeat(b,self.n_atoms,axis=1).flatten() # of shape (N*N_atoms)
+            costheta[ix] = b
+
+            if verbose:
+                print("time frame {} is being calculated".format(ts))
+            ix += 1
+
+        return (costheta,time_idx)
+
 
 cpdef director_z(LC,ts,segment='whole',bins_z=100,direction='z',Broken_interface=None,verbose=False):
     """
@@ -495,86 +543,39 @@ cpdef p2_z(LC,start_t,end_t,director=None,segment='whole',skip=None,bins_z=100,d
 
 
 # find cos(theta) between CN and the global director of LC systems
-cpdef CN_director_theta(LC,start,end,skip=None,verbose=False,director=None):
-    """
-    Function that calculates the cos(theta) between the CN vector of eaceh LC molecule
-    and the director of the system.
-    The director at each time frame is chosen to be the first eigenvector of the Q tensor
-    Q = \sum_{i}^{N} (3*u_{i} u_{i}t - I)/2N
-
-
-    start: The time to start calculation (in ns)
-    end: The time to end calculation (in ns)
-    skip: the time step in which to skip (in time index)
-    verbose: whether or not to print messages
-    director: If this is included, then director is used instead of Qmatrix
-
-    return:
-        cos(theta) in shape (n,n_molecules*n_atoms)
-    """
-    cdef np.ndarray Q,eigv,eigvec  
-    if skip is None:
-        skip = 1 
-    cdef int t = len(LC)
-    cdef np.ndarray time = np.linspace(0,LC.time,t)
-    cdef int start_timeidx = np.searchsorted(time,start,side='left')
-    cdef int end_timeidx = np.searchsorted(time,end,side='right')
-    cdef np.ndarray time_idx = np.arange(start_timeidx,end_timeidx,skip)
-    cdef int n = len(time_idx)
-    cdef np.ndarray costheta=np.zeros((n,LC.n_molecules*LC.n_atoms))
-    cdef int ix = 0
-
-    use_director = False
-    if isinstance(director,np.ndarray):
-        use_director = True
-        director = director[:,np.newaxis] # shape (3,1)
-    
-    if verbose:
-        if use_director == True:
-            print("Using director ", director)
-        else:
-            print("Using eigenvector of Q matrix to calculate direction")
-
-    for ts in time_idx:  
-        Q,CN_direction = LC.Qmatrix(ts) # CN_direction (N,3) 
-        if use_director != True:
-            director,_ = LC.director(Q) # director (3,1)
-
-        b = np.dot(CN_direction,director) #of shpae (N,1)
-        b = np.repeat(b,LC.n_atoms,axis=1).flatten() # of shape (N*N_atoms)
-        costheta[ix] = b
-
-        if verbose:
-            print("time frame {} is being calculated".format(ts))
-        ix += 1
-    return (costheta,time_idx)
-
 # find probability distribution of cos(theta) as a function of z 
 
 # write the data to pdb file in the beta factor
-cpdef pdb_bfactor(LC,pdb_name,data,verbose=False,sel_atoms=None): 
+def pdb_bfactor(LC,pdb_name,data,verbose=False,sel_atoms=None,others=False): 
     """
     saves the data as beta-factor which is in shape (n,n_molecules*n_atoms) into pdb file specified by pdb_name
     
-    LC: Liquid crystal object
-    pdb_name: the name of the pdb out file
-    data: a tuple containing (actual_data, time idx)
-    output:
+    Args:
+    -----
+        LC(LC object): Liquid crystal object
+        pdb_name(str): the name of the pdb out file
+        data(tuple): a tuple containing (actual_data, time idx)
+
+    Return:
+    ------
         saves a file with beta-factor with name pdb_name into the folder specified in LC object
     """
-    cdef int ix = 0
+    ix = 0
+
     data_array,time_idx = data 
     LC.properties['universe'].add_TopologyAttr("tempfactors")
     with mda.Writer(LC.path+'/'+pdb_name, multiframe=True,bonds=None,n_atoms=LC.n_atoms) as PDB:
+        u = LC.properties["universe"]
         for ts in time_idx: 
-            LC.properties["universe"].trajectory[ts]
+            u.trajectory[ts]
             if sel_atoms != None:
-                uni = LC.properties['universe'].select_atoms(sel_atoms)
+                uni = u.select_atoms(sel_atoms)
                 uni.atoms.tempfactors = data_array[ix]
-                PDB.write(uni.atoms)
+                
+                PDB.write(u.atoms)
             else:
-                LC.properties["universe"].atoms.tempfactors = data_array[ix]
-                PDB.write(LC.properties["universe"].atoms)
+                u.atoms.tempfactors = data_array[ix]
+                PDB.write(u.atoms)
 
             if verbose:
                 print("time frame {} has been written".format(ts))
