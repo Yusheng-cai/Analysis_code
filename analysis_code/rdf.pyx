@@ -19,7 +19,10 @@ def rdf(pos1,pos2,box,max_,nbins=100):
         2.gr(np.ndarray)=radial distribution function
     """
     N = pos1.shape[0]
+    N2 = pos2.shape[0]
+    assert N == N2
     gr = np.zeros((nbins,))
+
     
     # Find the density first
     rho = N/(box[0]*box[1]*box[2])
@@ -28,13 +31,19 @@ def rdf(pos1,pos2,box,max_,nbins=100):
     volume_vec = 4*np.pi*(bins_[1:]**2)*deltar
     
     # will result in shape (N1,N2,3)
-    dr = pos1[:,np.newaxis,:] - pos2
-    dr = abs(dr.reshape((N**2,3)))
+    dr = abs(pos1[:,np.newaxis,:] - pos2)
+    # Check if the absolute value of dx, dy, dz exceed half of the box length
     cond = dr > box/2
-    dr = abs(dr-box*cond)
+    # PBC
+    dr = box*cond - dr
     
+    # this will be of shape (N1,N2)
     distance = np.sqrt((dr**2).sum(axis=-1))    
+    # eliminate the self interaction terms
+    np.fill_diagonal(distance,0)
+    distance = distance.flatten()
     distance = distance[distance!=0]
+    distance = distance[distance <= max_]
     
     digitized = np.digitize(distance,bins_)
     binned_vec  = np.array([(digitized == i).sum() for i in range(1,nbins)])
