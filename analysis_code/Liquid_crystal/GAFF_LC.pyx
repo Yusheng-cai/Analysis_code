@@ -72,13 +72,31 @@ class GAFF_LC:
 
         return pos - COM[resnum]
 
-    def COM(self,ts):
+    def get_celldimension(self,ts):
+        """
+        Function that returns the cell dimension that each of the time frame 
+
+        Args:
+            ts(int): The time frame that the user want to obtain cell dimension at 
+
+        Return:
+            cell_dimension(numpy.ndarray): The cell dimension of the box as a (3,) numpy array
+        """
+        u = self.u
+        u.trajectory[ts]
+
+        cell_dimension = u.dimensions[:3]
+
+        return cell_dimension
+
+    def COM(self,ts,segment=None):
         """
         Function that calculates the center of mass of the Liquid crystal molecule at time ts
 
         Args:
         -----
             ts(int): The time frame at which the calculation is performed on 
+            segment(str): The segment that the user wants to calculate center of mass for (default None)
 
         Return:
             COM_mat(numpy.ndarray): The center of mass matrix of shape (N,3)
@@ -90,7 +108,12 @@ class GAFF_LC:
 
         for i in range(N):
             res = u.select_atoms("resnum {}".format(i))
-            COM_mat[i] = res.center_of_mass()
+            if segment is None:
+                COM_mat[i] = res.center_of_mass()
+            else:
+                num1,num2 = int(segment.split("-")[0]),int(segment.split("-")[1])
+                atom_grp = res.atoms[num1:num2]
+                COM_mat[i] = atom_grp.center_of_mass()
 
         return COM_mat
 
@@ -101,11 +124,11 @@ class GAFF_LC:
 
         Args:
         -----
-        ts(int): The time frame of the simulation that this operation is performed upon
+            ts(int): The time frame of the simulation that this operation is performed upon
 
         Return:
         ------
-        vec(numpy.ndarray): The director matrix of all the residues in the system
+            vec(numpy.ndarray): The director matrix of all the residues in the system
 
         """
         u = self.u
@@ -153,13 +176,13 @@ class GAFF_LC:
 
         Args:
         ----
-        ts(int): The time frame of the simulation
+            ts(int): The time frame of the simulation
 
         Return:
         ------
-        1.Qmatrix(numpy.ndarray)= The Q matrix of the liquid crystalline system
-        2.eigvec(numpy.ndarray)=The director of the system at time ts
-        3.p2(numpy.ndarray)=The p2 value of the system at time ts
+            1.Qmatrix(numpy.ndarray)= The Q matrix of the liquid crystalline system
+            2.eigvec(numpy.ndarray)=The director of the system at time ts
+            3.p2(numpy.ndarray)=The p2 value of the system at time ts
         """
         if MOI:
             d_mat = self.director_mat_MOI(ts)
@@ -184,11 +207,11 @@ class GAFF_LC:
         
         Args:
         -----
-        d_match(str): A string that contains the dihedral information passed in like "a1 a2 a3 a4"
+            d_match(str): A string that contains the dihedral information passed in like "a1 a2 a3 a4"
         
         Return:
         -------
-        dnum_list(list): A list of lists where each list contains 4 numbers corresponding to the index of the atom 
+            dnum_list(list): A list of lists where each list contains 4 numbers corresponding to the index of the atom 
         """
         septop = self.septop
         d_list = septop.dihedrals_list
@@ -210,13 +233,13 @@ class GAFF_LC:
         
         Args:
         ----
-        d_match(string): A string that contains the information passed in form "a1 a2 a3 a4"
-        ts(int): The time frame that the user wants to dihedral angle to be calculated at 
-        
+            d_match(string): A string that contains the information passed in form "a1 a2 a3 a4"
+            ts(int): The time frame that the user wants to dihedral angle to be calculated at 
+            
         Return:
         ------
-        dihedral(numpy.ndarray): shape (Nresidue*Ndihedral,) of all the dihdral angles that matches
-        d_match in the molecule in degree
+            dihedral(numpy.ndarray): shape (Nresidue*Ndihedral,) of all the dihdral angles that matches
+            d_match in the molecule in degree
         
         """
         m = np.array(self.match_dihedral(d_match))
