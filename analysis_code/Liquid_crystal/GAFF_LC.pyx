@@ -39,38 +39,15 @@ class GAFF_LC:
         Function that returns the position of each of the atoms in the system at time ts
 
         Args:
-        ----
             ts(int): The time frame at which the calculation is performed upon
 
         Return:
-        ------
             pos(numpy.ndarray): The position matrix at time ts of shape (N,3)
         """
         u = self.u
         u.trajectory[ts]
 
         return u.atoms.positions
-
-    def respos_noCOM(self,resnum,ts):
-        """
-        Function that returns the position of each of the atoms in a residue without their center of mass
-
-        Args:
-        ----
-            resnum(int): The index of the residue
-            ts(int): The time frame 
-
-        Return:
-        -----
-            pos(numpy.ndarray): The position of each of the atoms in residue (resnum) in the system without its COM
-        """
-        u = self.u
-        u.trajectory[ts]
-        COM = self.COM(ts)
-
-        pos = u.select_atoms("resnum {}".format(resnum)).positions
-
-        return pos - COM[resnum]
 
     def get_celldimension(self,ts):
         """
@@ -94,7 +71,6 @@ class GAFF_LC:
         Function that calculates the center of mass of the Liquid crystal molecule at time ts
 
         Args:
-        -----
             ts(int): The time frame at which the calculation is performed on 
             segment(str): The segment that the user wants to calculate center of mass for (default None)
 
@@ -116,18 +92,16 @@ class GAFF_LC:
                 COM_mat[i] = atom_grp.center_of_mass()
 
         return COM_mat
-
  
-    def director_mat(self,ts):
+    def director_mat(self,ts,MOI=False):
         """
-        Function that finds the director vector of all the residues in the system and put it in a matrix of shape (N,3)
+        Function that finds the director vector of all the residues in the system and put it in a matrix of shape (N,3). This can also find the director matrix using Moment of inertia tensor (the eigenvector that corresponds to the lowest eigenvalue of MOI tensor)
 
         Args:
-        -----
             ts(int): The time frame of the simulation that this operation is performed upon
+            MOI(bool): Whether or not to find director matrix using Moment of Inertia tensor
 
         Return:
-        ------
             vec(numpy.ndarray): The director matrix of all the residues in the system
 
         """
@@ -136,37 +110,17 @@ class GAFF_LC:
         aidx1 = self.aidx1
         aidx2 = self.aidx2
         director_mat = np.zeros((len(u.residues),3))
-        ix = 0
 
-        for res in u.residues:
-            a1 = res.atoms[aidx1].position
-            a2 = res.atoms[aidx2].position
+        for i in range(len(u.residues)):
+            if MOI:
+                director_mat[i] = u.select_atoms("resnum {}".format(i)).principal_axes()[-1]
+            else:
+                res = u.residues[i]
+                a1 = res.atoms[aidx1].position
+                a2 = res.atoms[aidx2].position
 
-            r = (a2-a1)/np.sqrt(((a2-a1)**2).sum())
-            director_mat[ix] = r
-            ix += 1
-
-        return director_mat
-
-    def director_mat_MOI(self,ts):
-        """
-        Function that finds the director matrix using Moment of inertia tensor (the eigenvector that corresponds to the lowest eigenvalue of MOI tensor)
-
-        Args:
-        ----
-            ts(int): The time frame 
-
-        Return:
-        ------
-            director_mat(numpy.ndarray): The director matrix obtained using MOI tensor
-        """
-        u = self.u
-        u.trajectory[ts]
-        N = len(u.residues)
-        director_mat = np.zeros((N,3))
-
-        for i in range(N):
-            director_mat[i] = u.select_atoms("resnum {}".format(i)).principal_axes()[-1]
+                r = (a2-a1)/np.sqrt(((a2-a1)**2).sum())
+                director_mat[i] = r
 
         return director_mat
 
@@ -175,19 +129,14 @@ class GAFF_LC:
         Function that calculates the Qmatrix of the system at time ts.
 
         Args:
-        ----
             ts(int): The time frame of the simulation
 
         Return:
-        ------
             1.Qmatrix(numpy.ndarray)= The Q matrix of the liquid crystalline system
             2.eigvec(numpy.ndarray)=The director of the system at time ts
             3.p2(numpy.ndarray)=The p2 value of the system at time ts
         """
-        if MOI:
-            d_mat = self.director_mat_MOI(ts)
-        else:
-            d_mat = self.director_mat(ts)
+        d_mat = self.director_mat(ts,MOI=MOI)
         u = self.u
         N = len(u.residues)
         I = np.eye(3)
@@ -293,3 +242,43 @@ class GAFF_LC:
     
     def __len__(self):
         return len(self.u.trajectory)
+
+def cost_r(LC,ts,min_,max_,MOI=False,nbins=101):
+    """
+    calculates cos(theta) between two pairs of Liquid crystal molecules as a function of R between the Center of mass distances, this
+    can only be performed on bulk liquid crystals
+    
+    Args: 
+        LC: Liquid crystal object
+        ts(int): the time frame at which this calculation is performed
+        min_(float): minimum distance between COM to consider
+        max_(float): maximum distance between COM to consider
+        MOI(bool): Whether or not to find director using moment of inertia tensor
+        nbins(int): number of bins to bin the separation between min_ and max_
+    """
+    bin_vec = np.linspace(min_,max_,nbins)  
+    cost_r = np.zeros((len(bin_vec),))
+    # (N,3) matrix
+    COM = LC.COM(ts)
+    box = LC.get_celldimension(ts)
+
+    # (N,N,3)
+    COM_dist = abs(COM - COM[:,np.newaxis,:])
+    # check pbc
+    cond = COM_dist > box/2
+    COM_dist = abs(COM_dist - cond*box)
+    COM_dist = np.sqrt((COM_dist**2).sum(axis=-1)) # (N,N)
+    COM_dist = np.triu(COM_dist)
+
+    digitized = np.digitize(COM_dist,bin_vec,right=True)
+    director = LC.director_mat(ts,MOI=MOI)
+    costtheta = director.dot(director.T) #(N,N) matrix of cos(thetas) 
+   
+    for i in range(1,len(bin_vec)):
+        where = np.argwhere(digitized == i)
+        if len(where) == 0:
+            cost_r[i] = 0
+        else:
+            cost_r[i] = costtheta[where[:,0],where[:,1]].sum()/len(where)
+
+    return cost_r
