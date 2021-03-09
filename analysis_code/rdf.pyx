@@ -39,14 +39,21 @@ def rdf(pos1,pos2,box,max_,nbins=100):
     
     # this will be of shape (N1,N2)
     distance = np.sqrt((dr**2).sum(axis=-1))    
-    # eliminate the self interaction terms
+
+    # Only take the upper triangular part as this matrix is symmetric
+    distance = np.triu(distance)
+
+    # eliminate the self distance terms
     np.fill_diagonal(distance,0)
+
     distance = distance.flatten()
     distance = distance[distance!=0]
     distance = distance[distance <= max_]
     
-    digitized = np.digitize(distance,bins_)
+    # right = True such that bins[i-1] < x <= bins[i]
+    digitized = np.digitize(distance,bins_,right=True)
+
     binned_vec  = np.array([(digitized == i).sum() for i in range(1,nbins)])
-    gr[1:] = binned_vec/(rho*volume_vec*N)
+    gr[1:] = 2*binned_vec/(rho*volume_vec*N)
     
     return bins_,gr
