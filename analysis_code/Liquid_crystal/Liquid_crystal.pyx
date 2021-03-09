@@ -82,13 +82,32 @@ class nCB(simulation):
                 t = np.linspace(0,time,len(data))
                 self.properties["p2"] = Timeseries(data,t)
 
-    def CN_vec(self,ts):
+    def get_celldimension(self,ts):
         """
-        Function that calculates the CN vector at time ts
+        Function that returns the cell dimension that each of the time frame 
+
+        Args:
+            ts(int): The time frame that the user want to obtain cell dimension at 
+
+        Return:
+            cell_dimension(numpy.ndarray): The cell dimension of the box as a (3,) numpy array
+        """
+        u = self.u
+        u.trajectory[ts]
+
+        cell_dimension = u.dimensions[:3]
+
+        return cell_dimension
+
+
+    def director_mat(self,ts,MOI=False):
+        """
+        Function that calculates the director vector at time ts. It can either use the CN vector of nCB molecule or the moment of inertia tensor to figure out the director.
 
         Args:
         ----
-        ts: the time step of the trajectory
+        ts(int): the time step of the trajectory
+        MOI(bool): whether or not the find director using moment of inertia tensor
 
         Return:
         ------
@@ -102,36 +121,16 @@ class nCB(simulation):
         else:
             residues = u.select_atoms("resname {}CB".format(self.n)).residues
         
-        CN = np.zeros((len(residues),3))
-        ix = 0
-        for res in residues: 
-            N = res.atoms[0].position
-            C = res.atoms[1].position
-            CN_vec = (N - C)/np.sqrt(((N-C)**2).sum())
-            CN[ix] = CN_vec
-            ix += 1
-
-        return CN
-
-    def director_MOI(self,ts):
-        """
-        Function that finds the director of each of the molecule using moment of inertia tensor
-
-        Args:
-        ----
-            ts(int): The time frame
-
-        Return:
-        ------
-            director_mat(numpy.ndarray): A matrix of director of shape (N,3)
-        """
-        u = self.properties["universe"]
-        u.trajectory[ts]
-        N = len(u.residues)
-        director_mat = np.zeros((N,3))
-
-        for i in range(N):
-            director_mat[i] = u.select_atoms("resnum {}".format(i)).principal_axes()[-1]
+        director_mat = np.zeros((len(residues),3))
+        for i in range(len(residues)): 
+            res = residues[i]
+            if MOI:
+                director_mat[i] = res.atoms.principal_axes()[-1]
+            else:
+                N = res.atoms[0].position
+                C = res.atoms[1].position
+                CN_vec = (N - C)/np.sqrt(((N-C)**2).sum())
+                director_mat[i] = CN_vec
 
         return director_mat
 
@@ -148,18 +147,15 @@ class nCB(simulation):
             \sum_{l=1}^{N} (3*u_{l}u_{l}t - I)/2N
             (3,3)
         """ 
-        if MOI:
-            director_vec = self.director_MOI(ts)
-        else:
-            director_vec = self.CN_vec(ts)
+        director_mat = self.director_mat(ts,MOI)
 
         ix = 0
         n = self.n_molecules
         I = np.eye(3)
 
-        Q = 3/(2*n)*np.dot(director_vec.T,director_vec) - 1/2*I
+        Q = 3/(2*n)*np.dot(director_mat.T,director_mat) - 1/2*I
 
-        return Q,director_vec
+        return Q,director_mat
     
     def director(self,Q):
         """
@@ -218,7 +214,24 @@ class nCB(simulation):
             ix += 1
 
         return COM 
-             
+
+    def get_celldimension(self,ts):
+        """
+        Function that returns the cell dimension that each of the time frame 
+
+        Args:
+            ts(int): The time frame that the user want to obtain cell dimension at 
+
+        Return:
+            cell_dimension(numpy.ndarray): The cell dimension of the box as a (3,) numpy array
+        """
+        u = self.properties["universe"]
+        u.trajectory[ts]
+
+        cell_dimension = u.dimensions[:3]
+
+        return cell_dimension
+ 
     def p2(self):
         """
         Function calculating p2 order parameter for nCB molecule
