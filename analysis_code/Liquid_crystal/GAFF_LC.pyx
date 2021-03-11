@@ -145,7 +145,7 @@ class GAFF_LC:
         eigval,eigvec = np.linalg.eig(Q)
         order = np.argsort(eigval)
         eigval = eigval[order]
-        eigvec = eigvec[order]
+        eigvec = eigvec[:,order]
 
         return Q,eigvec[:,-1],-2*eigval[1]
     
