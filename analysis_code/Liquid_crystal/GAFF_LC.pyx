@@ -13,10 +13,18 @@ class GAFF_LC:
     xtc(string): The path to the .xtc file of the Liquid crystal molecule
     u_vec(string): The atoms at which the direction of the LC molecule is defined (default C11-C14 for the mesogen in the literature 2 shown)
     """
-    def __init__(self,itp,top,xtc,u_vec='C11-C14'):
+    def __init__(self,itp,top,xtc,u_vec='C11-C14',bulk=False,sel=None):
         self.itp = itp
         self.top = top
         self.xtc = xtc
+        self.bulk = bulk
+        self.sel = sel
+
+        if self.bulk == True:
+            self.N = len(u.residues)
+        else:
+            self.N = len(u.select_atoms(self.sel).residues)
+
         self.u = mda.Universe(self.top,self.xtc)
         self.septop = topology(self.itp)
         self.atom1 = u_vec.split("-")[0]
@@ -47,7 +55,10 @@ class GAFF_LC:
         u = self.u
         u.trajectory[ts]
 
-        return u.atoms.positions
+        if self.bulk == True:
+            return u.select_atoms(self.sel).atoms.positions
+        else:
+            return u.atoms.positions
 
     def get_celldimension(self,ts):
         """
@@ -79,17 +90,23 @@ class GAFF_LC:
         """
         u = self.u
         u.trajectory[ts]
-        N = len(u.residues)
+        N = self.N
         COM_mat = np.zeros((N,3))
-
-        for i in range(N):
-            res = u.select_atoms("resnum {}".format(i))
+        
+        if self.bulk == True:
+            residues = u.residues
+        else:
+            residues = u.select_atoms(self.sel).residues
+        
+        ix = 0
+        for res in residues:
             if segment is None:
-                COM_mat[i] = res.center_of_mass()
+                COM_mat[ix] = res.atoms.center_of_mass()
             else:
                 num1,num2 = int(segment.split("-")[0]),int(segment.split("-")[1])
                 atom_grp = res.atoms[num1:num2]
-                COM_mat[i] = atom_grp.center_of_mass()
+                COM_mat[ix] = atom_grp.center_of_mass()
+            ix += 1
 
         return COM_mat
  
@@ -107,20 +124,27 @@ class GAFF_LC:
         """
         u = self.u
         u.trajectory[ts]
+        N = self.N
+        director_mat = np.zeros((N,3))
         aidx1 = self.aidx1
         aidx2 = self.aidx2
-        director_mat = np.zeros((len(u.residues),3))
 
-        for i in range(len(u.residues)):
+        if self.bulk == True:
+            residues = u.residues
+        else:
+            residues = u.select_atoms(self.sel).residues
+
+        ix = 0 
+        for res in residues:
             if MOI:
-                director_mat[i] = u.select_atoms("resnum {}".format(i)).principal_axes()[-1]
+                director_mat[ix] = res.atoms.principal_axes()[-1]
             else:
-                res = u.residues[i]
                 a1 = res.atoms[aidx1].position
                 a2 = res.atoms[aidx2].position
 
                 r = (a2-a1)/np.sqrt(((a2-a1)**2).sum())
-                director_mat[i] = r
+                director_mat[ix] = r
+            ix += 1
 
         return director_mat
 
@@ -137,8 +161,7 @@ class GAFF_LC:
             3.p2(numpy.ndarray)=The p2 value of the system at time ts
         """
         d_mat = self.director_mat(ts,MOI=MOI)
-        u = self.u
-        N = len(u.residues)
+        N = self.N
         I = np.eye(3)
 
         Q = 3/(2*N)*np.matmul(d_mat.T,d_mat) - 1/2*I
@@ -194,10 +217,16 @@ class GAFF_LC:
         m = np.array(self.match_dihedral(d_match))
         u = self.u
         u.trajectory[ts] 
-        pos = np.zeros((len(u.residues),len(m),4,3))
+        N = self.N
+        pos = np.zeros((N,len(m),4,3))
+        
+        if self.bulk == True:
+            residues = u.residues
+        else:
+            residues = u.select_atoms(self.sel).residues
 
-        for i in range(len(u.residues)):
-            pos[i] = u.residues[i].atoms[m].positions
+        for res in residues:
+            pos[i] = res.atoms[m].positions
             
         pos = pos.reshape(-1,4,3)
         
