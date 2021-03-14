@@ -13,19 +13,19 @@ class GAFF_LC:
     xtc(string): The path to the .xtc file of the Liquid crystal molecule
     u_vec(string): The atoms at which the direction of the LC molecule is defined (default C11-C14 for the mesogen in the literature 2 shown)
     """
-    def __init__(self,itp,top,xtc,u_vec='C11-C14',bulk=False,sel=None):
+    def __init__(self,itp,top,xtc,u_vec='C11-C14',bulk=True,sel=None):
         self.itp = itp
         self.top = top
         self.xtc = xtc
         self.bulk = bulk
         self.sel = sel
+        self.u = mda.Universe(self.top,self.xtc)
 
         if self.bulk == True:
-            self.N = len(u.residues)
+            self.N = len(self.u.residues)
         else:
-            self.N = len(u.select_atoms(self.sel).residues)
+            self.N = len(self.u.select_atoms(self.sel).residues)
 
-        self.u = mda.Universe(self.top,self.xtc)
         self.septop = topology(self.itp)
         self.atom1 = u_vec.split("-")[0]
         self.atom2 = u_vec.split("-")[1]
